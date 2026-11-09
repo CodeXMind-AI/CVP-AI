@@ -44,7 +44,7 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Scanner Vision (Strict Width Fix for 1 vs 7) is Running! ===")
+print("\n=== Digital Screen Scanner (Pro UI Edition) is Running! ===")
 print("- Press 'q' to exit.\n")
 
 sequence_history = deque(maxlen=20)
@@ -120,21 +120,16 @@ while True:
 
                     aspect_w_h = cw / float(ch) if ch > 0 else 0
                     
-                    # === الحل الصارم الجديد: الاعتماد على عرض البوكس والنسبة الهندسية المباشرة ===
+                    # الحل الصارم للفرق بين 1 و 7
                     if pred_digit in [1, 7]:
-                        # إيلا كان الحرف نحيف بزاف (العرض مقارنة بالارتفاع صغير جداً) فهو 1 قطعاً
-                        # أو إيلا كان العرض بالبيكسل (`cw`) صغير لدرجة مكيسمحش باش يكون 7
                         if aspect_w_h < 0.33:
                             pred_digit = 1
                         elif aspect_w_h > 0.55:
                             pred_digit = 7
                         else:
-                            # فحص إضافي للتأكد من مركز الكتلة أو الكثافة العلوية بشكل أبسط
                             h_crop, w_crop = digit_cropped.shape
                             top_half = digit_cropped[:h_crop//3, :]
                             top_density = np.sum(top_half > 0) / float(top_half.size) if top_half.size > 0 else 0
-                            
-                            # الرقم 7 كيكون عامر في الفوق، بينما 1 كيكون متساوي
                             if top_density > 0.35:
                                 pred_digit = 7
                             else:
@@ -166,13 +161,20 @@ while True:
         for (x_s, y_s, x_e, y_e, p_digit) in active_boxes:
             cv2.rectangle(display_frame, (x_s, y_s), (x_e, y_e), (0, 255, 0), 2)
             cv2.rectangle(display_frame, (x_s-1, y_s-1), (x_e+1, y_e+1), (0, 255, 0), 1)
-            if p_dir := p_digit:
+            if p_digit:
                 cv2.putText(display_frame, p_digit, (x_s, max(30, y_s - 10)), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
+    # === واجهة احترافية بكلمة DETECTED_DIGIT ===
     if persistent_sequence:
-        cv2.putText(display_frame, f"Scanner Number: {persistent_sequence}", (30, 50), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+        ui_text = f"DETECTED_DIGIT: [ {persistent_sequence} ]"
+        
+        # خلفية سوداء شفافة مع إطار أخضر نيون متناسق
+        cv2.rectangle(display_frame, (20, 20), (410, 70), (20, 20, 20), -1)
+        cv2.rectangle(display_frame, (20, 20), (410, 70), (0, 255, 128), 2)
+        
+        cv2.putText(display_frame, ui_text, (30, 55), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 128), 2)
 
     cv2.imshow('Digital Screen Scanner', display_frame)
 
