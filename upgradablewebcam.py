@@ -44,10 +44,11 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Scanner Vision (Perfect 1 vs 7 Fix) is Running! ===")
+print("\n=== Digital Scanner Vision (Fast Switch & Sticky Lock) is Running! ===")
 print("- Press 'q' to exit.\n")
 
-sequence_history = deque(maxlen=7)
+# === الحل هنا: رديناها 20 باش يتفاعل بسرعة خيالية مع التغيير (ما يبقاش مبلوكي) ===
+sequence_history = deque(maxlen=20)
 persistent_sequence = ""
 locked_radar_boxes = []
 missing_frames_counter = 0
@@ -84,7 +85,6 @@ while True:
                     extent = area / float(box_area) if box_area > 0 else 0
                     
                     if 0.15 < extent < 0.60:
-                        # تقسيم الأرقام المركبة (بحال 12) بذكاء
                         aspect_w_h_box = cw / float(ch) if cw > 0 else 0
                         if aspect_w_h_box > 1.6 and cw > 40:
                             half_w = cw // 2
@@ -119,18 +119,12 @@ while True:
                     pred_digit = predicted.item()
                     conf_score = confidence.item() * 100
 
-                    # === (التصحيح النهائي والجذري لـ 1 و 7 بناءً على شكل الصور اللي أرسلتي) ===
-                    # الرقم 1 في الخطوط الرقمية كيكون عرض الصندوق ديالو صغير بزاف مقارنة بارتفاعه (أو النصف الأيسر من 12)
                     aspect_w_h = cw / float(ch) if ch > 0 else 0
                     
-                    # إيلا المودل عطى 1 أو 7، غانشوفو الهندسة ديال الحرف بدقة:
                     if pred_digit in [1, 7]:
-                        # الرقم 1 ديما كيكون نحيف (Aspect Ratio أقل من 0.38 في الشاشات الرقمية)
                         if aspect_w_h < 0.38:
                             pred_digit = 1
                         else:
-                            # فحص إضافي: واش الخط فيه ميلان ديال 7 ولا عمودي خالص ديال 1
-                            # بما أن 7 عريضة في الفوق، نقدروا نتحققوا من توزع البياض والأسود
                             pred_digit = 7
 
                     if conf_score > 55:
@@ -138,14 +132,14 @@ while True:
 
                 current_frame_radar_boxes.append((x_start, y_start, x_end, y_end, str(pred_digit if pred_digit != -1 else "")))
 
-    # نظام السكينر الثابت (Sticky Lock) اللي عجبك
     if detected_sequence:
         sequence_history.append(detected_sequence)
         locked_radar_boxes = current_frame_radar_boxes
         missing_frames_counter = 0
     else:
         missing_frames_counter += 1
-        if missing_frames_counter > 40:
+        # === هنا خليناها 150 إطار، باش يبقى البوكس ثابت وصابر لمدة طويلة عاد يمشي إيلا غاب الرقم ===
+        if missing_frames_counter > 150:
             sequence_history.clear()
             locked_radar_boxes = []
             persistent_sequence = ""
@@ -170,7 +164,6 @@ while True:
 
     cv2.imshow('Digital Screen Scanner', display_frame)
 
-    key = cv2.waitKey(30) & 0xFF
     key = cv2.waitKey(30) & 0xFF
     if key == ord('q'):
         break
