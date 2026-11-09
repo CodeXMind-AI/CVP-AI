@@ -44,10 +44,9 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Scanner Vision (Fast Switch & Sticky Lock) is Running! ===")
+print("\n=== Digital Scanner Vision (Strict Width Fix for 1 vs 7) is Running! ===")
 print("- Press 'q' to exit.\n")
 
-# === الحل هنا: رديناها 20 باش يتفاعل بسرعة خيالية مع التغيير (ما يبقاش مبلوكي) ===
 sequence_history = deque(maxlen=20)
 persistent_sequence = ""
 locked_radar_boxes = []
@@ -121,11 +120,25 @@ while True:
 
                     aspect_w_h = cw / float(ch) if ch > 0 else 0
                     
+                    # === الحل الصارم الجديد: الاعتماد على عرض البوكس والنسبة الهندسية المباشرة ===
                     if pred_digit in [1, 7]:
-                        if aspect_w_h < 0.38:
+                        # إيلا كان الحرف نحيف بزاف (العرض مقارنة بالارتفاع صغير جداً) فهو 1 قطعاً
+                        # أو إيلا كان العرض بالبيكسل (`cw`) صغير لدرجة مكيسمحش باش يكون 7
+                        if aspect_w_h < 0.33:
                             pred_digit = 1
-                        else:
+                        elif aspect_w_h > 0.55:
                             pred_digit = 7
+                        else:
+                            # فحص إضافي للتأكد من مركز الكتلة أو الكثافة العلوية بشكل أبسط
+                            h_crop, w_crop = digit_cropped.shape
+                            top_half = digit_cropped[:h_crop//3, :]
+                            top_density = np.sum(top_half > 0) / float(top_half.size) if top_half.size > 0 else 0
+                            
+                            # الرقم 7 كيكون عامر في الفوق، بينما 1 كيكون متساوي
+                            if top_density > 0.35:
+                                pred_digit = 7
+                            else:
+                                pred_digit = 1
 
                     if conf_score > 55:
                         detected_sequence += str(pred_digit)
@@ -138,7 +151,6 @@ while True:
         missing_frames_counter = 0
     else:
         missing_frames_counter += 1
-        # === هنا خليناها 150 إطار، باش يبقى البوكس ثابت وصابر لمدة طويلة عاد يمشي إيلا غاب الرقم ===
         if missing_frames_counter > 150:
             sequence_history.clear()
             locked_radar_boxes = []
