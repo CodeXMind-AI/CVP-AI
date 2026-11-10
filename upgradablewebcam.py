@@ -45,12 +45,12 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Screen Scanner (Glassmorphic HUD + Confidence Meter) is Running! ===")
+print("\n=== Digital Screen Scanner (Solid Phone-Style Progress Bar) is Running! ===")
 print("- Press 'q' to exit.\n")
 
 sequence_history = deque(maxlen=20)
 persistent_sequence = ""
-current_confidence = 0.0  # متغير لتخزين نسبة الثقة الحالية
+current_confidence = 0.0
 locked_radar_boxes = []
 missing_frames_counter = 0
 
@@ -168,56 +168,60 @@ while True:
         if frame_max_conf > 0:
             current_confidence = frame_max_conf
 
+    # === رسم البوكسات المتوهجة بتأثير النيون (Neon Glow Effect) ===
     active_boxes = current_frame_radar_boxes if current_frame_radar_boxes else locked_radar_boxes
     
     if active_boxes:
+        overlay_glow = display_frame.copy()
         for (x_s, y_s, x_e, y_e, p_digit) in active_boxes:
-            cv2.rectangle(display_frame, (x_s, y_s), (x_e, y_e), (0, 255, 0), 2)
-            cv2.rectangle(display_frame, (x_s-1, y_s-1), (x_e+1, y_e+1), (0, 255, 0), 1)
+            cv2.rectangle(overlay_glow, (x_s - 4, y_s - 4), (x_e + 4, y_e + 4), (0, 255, 100), 4)
+            cv2.rectangle(overlay_glow, (x_s - 2, y_s - 2), (x_e + 2, y_e + 2), (0, 255, 160), 2)
+            cv2.rectangle(display_frame, (x_s, y_s), (x_e, y_e), (0, 255, 220), 2)
+            
             if p_digit:
-                cv2.putText(display_frame, p_digit, (x_s, max(30, y_s - 10)), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.rectangle(display_frame, (x_s, max(5, y_s - 28)), (x_s + 35, y_s), (0, 0, 0), -1)
+                cv2.rectangle(display_frame, (x_s, max(5, y_s - 28)), (x_s + 35, y_s), (0, 255, 220), 1)
+                cv2.putText(display_frame, p_digit, (x_s + 8, max(22, y_s - 7)), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 220), 2)
 
-    # === تصميم زجاجي شفاف مع شريط الثقة الحية (Confidence Progress Bar HUD) ===
+        cv2.addWeighted(overlay_glow, 0.35, display_frame, 0.65, 0, display_frame)
+
+    # === تصميم واجهة زجاجية مع شريط تقدم متصل (Solid Phone-Style Progress Bar) ===
     if persistent_sequence:
         ui_text = f"DETECTED_DIGIT: [ {persistent_sequence} ]"
         conf_text = f"CONF: {current_confidence:.1f}%"
         
-        # توسيع اللوحة الزجاجية شوية باش تهز حتى شريط التقدم والنسبة المئوية
-        x1, y1, x2, y2 = 20, 20, 440, 100
+        x1, y1, x2, y2 = 20, 20, 450, 105
         sub_img = display_frame[y1:y2, x1:x2]
-        glass_overlay = np.full(sub_img.shape, (20, 70, 30), dtype=np.uint8)
-        blended_glass = cv2.addWeighted(sub_img, 0.55, glass_overlay, 0.45, 0)
+        glass_overlay = np.full(sub_img.shape, (15, 50, 25), dtype=np.uint8)
+        blended_glass = cv2.addWeighted(sub_img, 0.50, glass_overlay, 0.50, 0)
         display_frame[y1:y2, x1:x2] = blended_glass
         
-        # إطار أخضر نيون أنيق
-        cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 120), 2)
+        cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 150), 2)
+        cv2.rectangle(display_frame, (x1+2, y1+2), (x2-2, y2-2), (0, 100, 60), 1)
         
-        # كتابة الرقم الأساسي المكتشف
         cv2.putText(display_frame, ui_text, (x1 + 15, y1 + 32), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 2)
+        cv2.putText(display_frame, conf_text, (x1 + 315, y1 + 32), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 200), 2)
         
-        # كتابة نسبة الثقة المئوية بجانب النص
-        cv2.putText(display_frame, conf_text, (x1 + 300, y1 + 32), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 180), 2)
+        # === شريط التقدم المتصل العادي (Solid Progress Bar) ===
+        bar_x1, bar_y1 = x1 + 15, y1 + 54
+        bar_x2, bar_y2 = x2 - 15, y1 + 76
         
-        # === تصميم شريط التقدم (Progress Bar) الخاص بالثقة ===
-        bar_x1, bar_y1 = x1 + 15, y1 + 52
-        bar_x2, bar_y2 = x2 - 15, y1 + 70
+        # خلفية الشريط الداكنة
+        cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (25, 25, 25), -1)
         
-        # الخلفية الرمادية الداكنة ديال الشريط
-        cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (40, 40, 40), -1)
-        
-        # حساب عرض شريط التقدم بناءً على نسبة الثقة (Confidence %)
+        # حساب عرض التعبئة بناءً على نسبة الثقة (Confidence %)
         fill_width = int((bar_x2 - bar_x1) * (current_confidence / 100.0))
         fill_width = max(0, min(fill_width, bar_x2 - bar_x1))
         
         if fill_width > 0:
-            # تعبئة الشريط بلون أخضر نيون متدرج وحي
-            cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x1 + fill_width, bar_y2), (0, 255, 120), -1)
-        
-        # إطار خارجي رقيق لشريط التقدم
-        cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (200, 200, 200), 1)
+            # تعبئة الشريط بلون أخضر متصل بحال شريط التليفون
+            cv2.rectangle(display_frame, (bar_x1 + 2, bar_y1 + 3), (bar_x1 + fill_width - 2, bar_y2 - 3), (0, 255, 140), -1)
+                
+        # إطار خارجي دقيق لشريط التقدم
+        cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (120, 120, 120), 1)
 
     cv2.imshow('Digital Screen Scanner', display_frame)
 
