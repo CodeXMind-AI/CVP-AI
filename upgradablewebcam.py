@@ -44,7 +44,7 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Screen Scanner (Pro UI Edition) is Running! ===")
+print("\n=== Digital Screen Scanner (iOS Glassmorphic Green HUD) is Running! ===")
 print("- Press 'q' to exit.\n")
 
 sequence_history = deque(maxlen=20)
@@ -165,16 +165,31 @@ while True:
                 cv2.putText(display_frame, p_digit, (x_s, max(30, y_s - 10)), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-    # === واجهة احترافية بكلمة DETECTED_DIGIT ===
+    # === تصميم زجاجي شفاف أخضر حديث (iOS Glassmorphism HUD Style) ===
     if persistent_sequence:
         ui_text = f"DETECTED_DIGIT: [ {persistent_sequence} ]"
         
-        # خلفية سوداء شفافة مع إطار أخضر نيون متناسق
-        cv2.rectangle(display_frame, (20, 20), (410, 70), (20, 20, 20), -1)
-        cv2.rectangle(display_frame, (20, 20), (410, 70), (0, 255, 128), 2)
+        # إحداثيات المستطيل الزجاجي
+        x1, y1, x2, y2 = 20, 20, 430, 75
         
-        cv2.putText(display_frame, ui_text, (30, 55), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 128), 2)
+        # استخراج المنطقة من الفريم الأصلي باش نديرو عليها التأثير الزجاجي الشفاف
+        sub_img = display_frame[y1:y2, x1:x2]
+        
+        # إنشاء طبقة زجاجية خضراء ناعمة (Green Glass Tint)
+        glass_overlay = np.full(sub_img.shape, (20, 70, 30), dtype=np.uint8) # لون أخضر زجاجي داكن هادئ
+        
+        # دمج الخلفية الأصلية مع الطبقة الخضراء بنسبة شفافية (Opacity effect)
+        blended_glass = cv2.addWeighted(sub_img, 0.55, glass_overlay, 0.45, 0)
+        
+        # وضع المنطقة الزجاجية المدمجة في مكانها في الفريم
+        display_frame[y1:y2, x1:x2] = blended_glass
+        
+        # رسم إطار أخضر نيون ناعم وأنيق يحيط بالزجاج
+        cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 120), 2)
+        
+        # كتابة النص بلون أبيض نقي وواضح وسط الزجاج الأخضر
+        cv2.putText(display_frame, ui_text, (x1 + 15, y1 + 38), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
 
     cv2.imshow('Digital Screen Scanner', display_frame)
 
