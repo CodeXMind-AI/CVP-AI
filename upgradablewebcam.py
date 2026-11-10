@@ -45,11 +45,12 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Screen Scanner (Glassmorphic HUD + Beep Audio) is Running! ===")
+print("\n=== Digital Screen Scanner (Glassmorphic HUD + Confidence Meter) is Running! ===")
 print("- Press 'q' to exit.\n")
 
 sequence_history = deque(maxlen=20)
 persistent_sequence = ""
+current_confidence = 0.0  # متغير لتخزين نسبة الثقة الحالية
 locked_radar_boxes = []
 missing_frames_counter = 0
 
@@ -71,6 +72,7 @@ while True:
     
     detected_sequence = ""
     current_frame_radar_boxes = []
+    frame_max_conf = 0.0
 
     if contours:
         raw_candidates = []
@@ -107,6 +109,7 @@ while True:
                 digit_cropped = thresh[y_start:y_end, x_start:x_end]
                 
                 pred_digit = -1
+                conf_score = 0.0
                 if digit_cropped.size > 0:
                     pil_img = Image.fromarray(digit_cropped)
                     img_tensor = transform(pil_img).unsqueeze(0).to(device)
@@ -138,6 +141,7 @@ while True:
 
                     if conf_score > 55:
                         detected_sequence += str(pred_digit)
+                        frame_max_conf = max(frame_max_conf, conf_score)
 
                 current_frame_radar_boxes.append((x_start, y_start, x_end, y_end, str(pred_digit if pred_digit != -1 else "")))
 
@@ -151,16 +155,18 @@ while True:
             sequence_history.clear()
             locked_radar_boxes = []
             persistent_sequence = ""
+            current_confidence = 0.0
 
     if len(sequence_history) > 0:
         stable_sequence = max(set(sequence_history), key=sequence_history.count)
-        # إصدار صوت "بيب" مرة واحدة فقط عند تغير الرقم أو ظهوره لأول مرة
         if stable_sequence != persistent_sequence:
             persistent_sequence = stable_sequence
             try:
-                winsound.Beep(1000, 150) # تردد 1000 هرتز لمدة 150 ميلي ثانية
+                winsound.Beep(1000, 150)
             except:
                 pass
+        if frame_max_conf > 0:
+            current_confidence = frame_max_conf
 
     active_boxes = current_frame_radar_boxes if current_frame_radar_boxes else locked_radar_boxes
     
@@ -172,19 +178,46 @@ while True:
                 cv2.putText(display_frame, p_digit, (x_s, max(30, y_s - 10)), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-    # === تصميم زجاجي شفاف أخضر حديث (iOS Glassmorphism HUD Style) ===
+    # === تصميم زجاجي شفاف مع شريط الثقة الحية (Confidence Progress Bar HUD) ===
     if persistent_sequence:
         ui_text = f"DETECTED_DIGIT: [ {persistent_sequence} ]"
+        conf_text = f"CONF: {current_confidence:.1f}%"
         
-        x1, y1, x2, y2 = 20, 20, 430, 75
+        # توسيع اللوحة الزجاجية شوية باش تهز حتى شريط التقدم والنسبة المئوية
+        x1, y1, x2, y2 = 20, 20, 440, 100
         sub_img = display_frame[y1:y2, x1:x2]
         glass_overlay = np.full(sub_img.shape, (20, 70, 30), dtype=np.uint8)
         blended_glass = cv2.addWeighted(sub_img, 0.55, glass_overlay, 0.45, 0)
         display_frame[y1:y2, x1:x2] = blended_glass
         
+        # إطار أخضر نيون أنيق
         cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 120), 2)
-        cv2.putText(display_frame, ui_text, (x1 + 15, y1 + 38), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        
+        # كتابة الرقم الأساسي المكتشف
+        cv2.putText(display_frame, ui_text, (x1 + 15, y1 + 32), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 2)
+        
+        # كتابة نسبة الثقة المئوية بجانب النص
+        cv2.putText(display_frame, conf_text, (x1 + 300, y1 + 32), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 180), 2)
+        
+        # === تصميم شريط التقدم (Progress Bar) الخاص بالثقة ===
+        bar_x1, bar_y1 = x1 + 15, y1 + 52
+        bar_x2, bar_y2 = x2 - 15, y1 + 70
+        
+        # الخلفية الرمادية الداكنة ديال الشريط
+        cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (40, 40, 40), -1)
+        
+        # حساب عرض شريط التقدم بناءً على نسبة الثقة (Confidence %)
+        fill_width = int((bar_x2 - bar_x1) * (current_confidence / 100.0))
+        fill_width = max(0, min(fill_width, bar_x2 - bar_x1))
+        
+        if fill_width > 0:
+            # تعبئة الشريط بلون أخضر نيون متدرج وحي
+            cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x1 + fill_width, bar_y2), (0, 255, 120), -1)
+        
+        # إطار خارجي رقيق لشريط التقدم
+        cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (200, 200, 200), 1)
 
     cv2.imshow('Digital Screen Scanner', display_frame)
 
