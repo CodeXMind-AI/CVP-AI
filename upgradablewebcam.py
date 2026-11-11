@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 from collections import deque
 import winsound
+import time
 
 class SimpleCNN(nn.Module):
     def __init__(self):
@@ -45,7 +46,7 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Screen Scanner (Solid Phone-Style Progress Bar) is Running! ===")
+print("\n=== Digital Screen Scanner (Full HUD Fixed Edition) is Running! ===")
 print("- Press 'q' to exit.\n")
 
 sequence_history = deque(maxlen=20)
@@ -54,6 +55,13 @@ current_confidence = 0.0
 locked_radar_boxes = []
 missing_frames_counter = 0
 
+total_detections_count = 0
+confidence_history_sum = 0.0
+confidence_samples_count = 0
+
+prev_time = time.time()
+fps_smooth = 0.0
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -61,6 +69,13 @@ while True:
 
     display_frame = frame.copy()
     
+    current_time = time.time()
+    time_diff = current_time - prev_time
+    prev_time = current_time
+    if time_diff > 0:
+        instant_fps = 1.0 / time_diff
+        fps_smooth = (fps_smooth * 0.8) + (instant_fps * 0.2)
+
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -124,7 +139,6 @@ while True:
 
                     aspect_w_h = cw / float(ch) if ch > 0 else 0
                     
-                    # الحل الصارم للفرق بين 1 و 7
                     if pred_digit in [1, 7]:
                         if aspect_w_h < 0.33:
                             pred_digit = 1
@@ -161,14 +175,16 @@ while True:
         stable_sequence = max(set(sequence_history), key=sequence_history.count)
         if stable_sequence != persistent_sequence:
             persistent_sequence = stable_sequence
+            total_detections_count += 1
             try:
                 winsound.Beep(1000, 150)
             except:
                 pass
         if frame_max_conf > 0:
             current_confidence = frame_max_conf
+            confidence_history_sum += current_confidence
+            confidence_samples_count += 1
 
-    # === رسم البوكسات المتوهجة بتأثير النيون (Neon Glow Effect) ===
     active_boxes = current_frame_radar_boxes if current_frame_radar_boxes else locked_radar_boxes
     
     if active_boxes:
@@ -186,7 +202,7 @@ while True:
 
         cv2.addWeighted(overlay_glow, 0.35, display_frame, 0.65, 0, display_frame)
 
-    # === تصميم واجهة زجاجية مع شريط تقدم متصل (Solid Phone-Style Progress Bar) ===
+    # === الواجهة الرئيسة في الجهة اليسرى (Detected Digit & Progress Bar HUD) ===
     if persistent_sequence:
         ui_text = f"DETECTED_DIGIT: [ {persistent_sequence} ]"
         conf_text = f"CONF: {current_confidence:.1f}%"
@@ -205,23 +221,44 @@ while True:
         cv2.putText(display_frame, conf_text, (x1 + 315, y1 + 32), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 200), 2)
         
-        # === شريط التقدم المتصل العادي (Solid Progress Bar) ===
         bar_x1, bar_y1 = x1 + 15, y1 + 54
         bar_x2, bar_y2 = x2 - 15, y1 + 76
         
-        # خلفية الشريط الداكنة
         cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (25, 25, 25), -1)
         
-        # حساب عرض التعبئة بناءً على نسبة الثقة (Confidence %)
         fill_width = int((bar_x2 - bar_x1) * (current_confidence / 100.0))
         fill_width = max(0, min(fill_width, bar_x2 - bar_x1))
         
         if fill_width > 0:
-            # تعبئة الشريط بلون أخضر متصل بحال شريط التليفون
             cv2.rectangle(display_frame, (bar_x1 + 2, bar_y1 + 3), (bar_x1 + fill_width - 2, bar_y2 - 3), (0, 255, 140), -1)
                 
-        # إطار خارجي دقيق لشريط التقدم
         cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (120, 120, 120), 1)
+
+    # === لوحة الإحصائيات الحية في الجهة اليمنى (Balanced Compact Stats Dashboard) ===
+    h_frame, w_frame, _ = display_frame.shape
+    sx1, sy1, sx2, sy2 = w_frame - 180, 20, w_frame - 15, 105
+    
+    sub_stats = display_frame[sy1:sy2, sx1:sx2]
+    stats_overlay = np.full(sub_stats.shape, (30, 30, 30), dtype=np.uint8)
+    blended_stats = cv2.addWeighted(sub_stats, 0.45, stats_overlay, 0.55, 0)
+    display_frame[sy1:sy2, sx1:sx2] = blended_stats
+    
+    cv2.rectangle(display_frame, (sx1, sy1), (sx2, sy2), (0, 200, 255), 2)
+    
+    avg_conf = (confidence_history_sum / confidence_samples_count) if confidence_samples_count > 0 else 0.0
+    
+    fps_text = f"FPS: {int(fps_smooth)}"
+    det_text = f"DET: {total_detections_count}"
+    avg_text = f"AVG: {avg_conf:.1f}%"
+    
+    cv2.putText(display_frame, "SYS STATS", (sx1 + 8, sy1 + 18), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)
+    cv2.putText(display_frame, fps_text, (sx1 + 8, sy1 + 39), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1)
+    cv2.putText(display_frame, det_text, (sx1 + 8, sy1 + 60), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1)
+    cv2.putText(display_frame, avg_text, (sx1 + 8, sy1 + 81), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 180), 1)
 
     cv2.imshow('Digital Screen Scanner', display_frame)
 
