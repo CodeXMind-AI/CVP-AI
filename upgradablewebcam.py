@@ -46,7 +46,8 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Screen Scanner (Full HUD Fixed Edition) is Running! ===")
+print("\n=== Digital Screen Scanner (Multi-Digit Sequence Mode) is Running! ===")
+print("- Press 'c' to clear sequence.")
 print("- Press 'q' to exit.\n")
 
 sequence_history = deque(maxlen=20)
@@ -54,6 +55,10 @@ persistent_sequence = ""
 current_confidence = 0.0
 locked_radar_boxes = []
 missing_frames_counter = 0
+
+# === متغيرات وضعية سلاسل الأرقام الطويلة (Multi-Digit Mode) ===
+captured_full_sequence = ""
+last_appended_digit_time = 0
 
 total_detections_count = 0
 confidence_history_sum = 0.0
@@ -111,6 +116,7 @@ while True:
                             raw_candidates.append((x, y, cw, ch, c))
 
         if raw_candidates:
+            # ترتيب الأرقام من اليسار لليمين بدقة تامة لقراءة السلاسل
             raw_candidates = sorted(raw_candidates, key=lambda item: item[0])
             
             for (x, y, cw, ch, c) in raw_candidates:
@@ -176,6 +182,12 @@ while True:
         if stable_sequence != persistent_sequence:
             persistent_sequence = stable_sequence
             total_detections_count += 1
+            
+            # === إضافة الرقم المستقر الجديد للسلسلة الطويلة مع منع التكرار السريع ===
+            if current_time - last_appended_digit_time > 0.8:
+                captured_full_sequence += persistent_sequence
+                last_appended_digit_time = current_time
+
             try:
                 winsound.Beep(1000, 150)
             except:
@@ -202,12 +214,12 @@ while True:
 
         cv2.addWeighted(overlay_glow, 0.35, display_frame, 0.65, 0, display_frame)
 
-    # === الواجهة الرئيسة في الجهة اليسرى (Detected Digit & Progress Bar HUD) ===
+    # === الواجهة الرئيسية في الجهة اليسرى (Detected Digit & Progress Bar HUD) ===
     if persistent_sequence:
-        ui_text = f"DETECTED_DIGIT: [ {persistent_sequence} ]"
+        ui_text = f"DETECTED: [ {persistent_sequence} ]"
         conf_text = f"CONF: {current_confidence:.1f}%"
         
-        x1, y1, x2, y2 = 20, 20, 450, 105
+        x1, y1, x2, y2 = 20, 20, 440, 105
         sub_img = display_frame[y1:y2, x1:x2]
         glass_overlay = np.full(sub_img.shape, (15, 50, 25), dtype=np.uint8)
         blended_glass = cv2.addWeighted(sub_img, 0.50, glass_overlay, 0.50, 0)
@@ -217,9 +229,9 @@ while True:
         cv2.rectangle(display_frame, (x1+2, y1+2), (x2-2, y2-2), (0, 100, 60), 1)
         
         cv2.putText(display_frame, ui_text, (x1 + 15, y1 + 32), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 2)
-        cv2.putText(display_frame, conf_text, (x1 + 315, y1 + 32), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 200), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, (255, 255, 255), 2)
+        cv2.putText(display_frame, conf_text, (x1 + 305, y1 + 32), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 200), 2)
         
         bar_x1, bar_y1 = x1 + 15, y1 + 54
         bar_x2, bar_y2 = x2 - 15, y1 + 76
@@ -234,7 +246,28 @@ while True:
                 
         cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (120, 120, 120), 1)
 
-    # === لوحة الإحصائيات الحية في الجهة اليمنى (Balanced Compact Stats Dashboard) ===
+    # === واجهة سلسلة الأرقام الطويلة في أسفل الشاشة (Multi-Digit Sequence HUD) ===
+    if captured_full_sequence:
+        h_f, w_f, _ = display_frame.shape
+        seq_x1, seq_y1, seq_x2, seq_y2 = 20, h_f - 80, w_f - 20, h_f - 20
+        
+        sub_seq = display_frame[seq_y1:seq_seq2 if 'seq_seq2' in locals() else seq_y2:seq_x2] # تصحيح أبعاد القطع
+        sub_seq = display_frame[seq_y1:seq_y2, seq_x1:seq_x2]
+        seq_overlay = np.full(sub_seq.shape, (20, 20, 40), dtype=np.uint8)
+        blended_seq = cv2.addWeighted(sub_seq, 0.40, seq_overlay, 0.60, 0)
+        display_frame[seq_y1:seq_y2, seq_x1:seq_x2] = blended_seq
+        
+        cv2.rectangle(display_frame, (seq_x1, seq_y1), (seq_x2, seq_y2), (255, 150, 0), 2)
+        
+        full_seq_text = f"MULTI-DIGIT SEQUENCE: {captured_full_sequence}"
+        cv2.putText(display_frame, full_seq_text, (seq_x1 + 15, seq_y1 + 38), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+        
+        hint_text = "Press 'c' to clear"
+        cv2.putText(display_frame, hint_text, (seq_x2 - 170, seq_y1 + 38), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
+
+    # === لوحة الإحصائيات الحية في الجهة اليمنى (Compact Stats Dashboard) ===
     h_frame, w_frame, _ = display_frame.shape
     sx1, sy1, sx2, sy2 = w_frame - 180, 20, w_frame - 15, 105
     
@@ -263,7 +296,9 @@ while True:
     cv2.imshow('Digital Screen Scanner', display_frame)
 
     key = cv2.waitKey(30) & 0xFF
-    if key == ord('q'):
+    if key == ord('c'):  # مسح السلسلة الطويلة عند ضغط حرف C
+        captured_full_sequence = ""
+    elif key == ord('q'):
         break
 
 cap.release()
