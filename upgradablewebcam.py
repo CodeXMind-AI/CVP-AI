@@ -44,9 +44,23 @@ transform = transforms.Compose([
     transforms.Normalize((0.1307,), (0.3081,))
 ])
 
+# === قاموس الترددات الصوتية لكل رقم (Audio Frequency Mapping) ===
+digit_frequencies = {
+    '0': 440,  # A4
+    '1': 494,  # B4
+    '2': 523,  # C5
+    '3': 587,  # D5
+    '4': 659,  # E5
+    '5': 698,  # F5
+    '6': 784,  # G5
+    '7': 880,  # A5
+    '8': 987,  # B5
+    '9': 1046  # C6 (High C)
+}
+
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Screen Scanner (Dynamic 9/6 Confidence Edition) is Running! ===")
+print("\n=== Digital Screen Scanner (Custom Audio Feedback Edition) is Running! ===")
 print("- Press 'c' to clear sequence.")
 print("- Press 'q' to exit.\n")
 
@@ -206,7 +220,10 @@ while True:
                 last_appended_digit_time = current_time
 
             try:
-                winsound.Beep(1000, 150)
+                if persistent_sequence:
+                    last_char = persistent_sequence[-1]
+                    freq = digit_frequencies.get(last_char, 1000)
+                    winsound.Beep(freq, 120)
             except:
                 pass
         if frame_max_conf > 0:
