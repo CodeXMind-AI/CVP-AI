@@ -46,7 +46,7 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Screen Scanner (Multi-Digit Sequence Mode) is Running! ===")
+print("\n=== Digital Screen Scanner (Noise-Filtered Edition) is Running! ===")
 print("- Press 'c' to clear sequence.")
 print("- Press 'q' to exit.\n")
 
@@ -56,7 +56,6 @@ current_confidence = 0.0
 locked_radar_boxes = []
 missing_frames_counter = 0
 
-# === متغيرات وضعية سلاسل الأرقام الطويلة (Multi-Digit Mode) ===
 captured_full_sequence = ""
 last_appended_digit_time = 0
 
@@ -116,7 +115,6 @@ while True:
                             raw_candidates.append((x, y, cw, ch, c))
 
         if raw_candidates:
-            # ترتيب الأرقام من اليسار لليمين بدقة تامة لقراءة السلاسل
             raw_candidates = sorted(raw_candidates, key=lambda item: item[0])
             
             for (x, y, cw, ch, c) in raw_candidates:
@@ -159,11 +157,12 @@ while True:
                             else:
                                 pred_digit = 1
 
+                    # تخزين نسبة الثقة والرقم في البوكس مع تمرير الـ score
                     if conf_score > 55:
                         detected_sequence += str(pred_digit)
                         frame_max_conf = max(frame_max_conf, conf_score)
 
-                current_frame_radar_boxes.append((x_start, y_start, x_end, y_end, str(pred_digit if pred_digit != -1 else "")))
+                current_frame_radar_boxes.append((x_start, y_start, x_end, y_end, str(pred_digit if pred_digit != -1 else ""), conf_score))
 
     if detected_sequence:
         sequence_history.append(detected_sequence)
@@ -183,7 +182,6 @@ while True:
             persistent_sequence = stable_sequence
             total_detections_count += 1
             
-            # === إضافة الرقم المستقر الجديد للسلسلة الطويلة مع منع التكرار السريع ===
             if current_time - last_appended_digit_time > 0.8:
                 captured_full_sequence += persistent_sequence
                 last_appended_digit_time = current_time
@@ -197,16 +195,24 @@ while True:
             confidence_history_sum += current_confidence
             confidence_samples_count += 1
 
+    # === رسم البوكسات المتوهجة فقط للكونتورات ذات الثقة العالية (> 45) ===
     active_boxes = current_frame_radar_boxes if current_frame_radar_boxes else locked_radar_boxes
     
     if active_boxes:
         overlay_glow = display_frame.copy()
-        for (x_s, y_s, x_e, y_e, p_digit) in active_boxes:
-            cv2.rectangle(overlay_glow, (x_s - 4, y_s - 4), (x_e + 4, y_e + 4), (0, 255, 100), 4)
-            cv2.rectangle(overlay_glow, (x_s - 2, y_s - 2), (x_e + 2, y_e + 2), (0, 255, 160), 2)
-            cv2.rectangle(display_frame, (x_s, y_s), (x_e, y_e), (0, 255, 220), 2)
-            
-            if p_digit:
+        for box_data in active_boxes:
+            if len(box_data) == 6:
+                x_s, y_s, x_e, y_e, p_digit, c_score = box_data
+            else:
+                x_s, y_s, x_e, y_e, p_digit = box_data
+                c_score = 100.0 # للبوكسات القديمة المحفوظة
+
+            # فلتر منع إزعاج الحيط: لا ترسم إلا إيلا كانت الثقة زايدة على 45%
+            if c_score > 51 and p_digit != "":
+                cv2.rectangle(overlay_glow, (x_s - 4, y_s - 4), (x_e + 4, y_e + 4), (0, 255, 100), 4)
+                cv2.rectangle(overlay_glow, (x_s - 2, y_s - 2), (x_e + 2, y_e + 2), (0, 255, 160), 2)
+                cv2.rectangle(display_frame, (x_s, y_s), (x_e, y_e), (0, 255, 220), 2)
+                
                 cv2.rectangle(display_frame, (x_s, max(5, y_s - 28)), (x_s + 35, y_s), (0, 0, 0), -1)
                 cv2.rectangle(display_frame, (x_s, max(5, y_s - 28)), (x_s + 35, y_s), (0, 255, 220), 1)
                 cv2.putText(display_frame, p_digit, (x_s + 8, max(22, y_s - 7)), 
@@ -251,7 +257,6 @@ while True:
         h_f, w_f, _ = display_frame.shape
         seq_x1, seq_y1, seq_x2, seq_y2 = 20, h_f - 80, w_f - 20, h_f - 20
         
-        sub_seq = display_frame[seq_y1:seq_seq2 if 'seq_seq2' in locals() else seq_y2:seq_x2] # تصحيح أبعاد القطع
         sub_seq = display_frame[seq_y1:seq_y2, seq_x1:seq_x2]
         seq_overlay = np.full(sub_seq.shape, (20, 20, 40), dtype=np.uint8)
         blended_seq = cv2.addWeighted(sub_seq, 0.40, seq_overlay, 0.60, 0)
@@ -296,7 +301,7 @@ while True:
     cv2.imshow('Digital Screen Scanner', display_frame)
 
     key = cv2.waitKey(30) & 0xFF
-    if key == ord('c'):  # مسح السلسلة الطويلة عند ضغط حرف C
+    if key == ord('c'):
         captured_full_sequence = ""
     elif key == ord('q'):
         break
