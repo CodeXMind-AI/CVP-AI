@@ -46,7 +46,7 @@ transform = transforms.Compose([
 
 cap = cv2.VideoCapture(0)
 
-print("\n=== Digital Screen Scanner (Noise-Filtered Edition) is Running! ===")
+print("\n=== Digital Screen Scanner (Dynamic 9/6 Confidence Edition) is Running! ===")
 print("- Press 'c' to clear sequence.")
 print("- Press 'q' to exit.\n")
 
@@ -129,6 +129,8 @@ while True:
                 
                 pred_digit = -1
                 conf_score = 0.0
+                min_required_conf = 51.0
+
                 if digit_cropped.size > 0:
                     pil_img = Image.fromarray(digit_cropped)
                     img_tensor = transform(pil_img).unsqueeze(0).to(device)
@@ -157,12 +159,29 @@ while True:
                             else:
                                 pred_digit = 1
 
-                    # تخزين نسبة الثقة والرقم في البوكس مع تمرير الـ score
-                    if conf_score > 55:
+                    is_verified_6_or_9 = False
+                    if pred_digit in [6, 9]:
+                        h_crop, w_crop = digit_cropped.shape
+                        top_half = digit_cropped[:h_crop//2, :]
+                        bottom_half = digit_cropped[h_crop//2:, :]
+                        
+                        top_density = np.sum(top_half > 0) / float(top_half.size) if top_half.size > 0 else 0
+                        bottom_density = np.sum(bottom_half > 0) / float(bottom_half.size) if bottom_half.size > 0 else 0
+                        
+                        if top_density > bottom_density * 1.15:
+                            pred_digit = 9
+                            is_verified_6_or_9 = True
+                        elif bottom_density > top_density * 1.15:
+                            pred_digit = 6
+                            is_verified_6_or_9 = True
+
+                    min_required_conf = 38.0 if is_verified_6_or_9 else 51.0
+
+                    if conf_score >= min_required_conf:
                         detected_sequence += str(pred_digit)
                         frame_max_conf = max(frame_max_conf, conf_score)
 
-                current_frame_radar_boxes.append((x_start, y_start, x_end, y_end, str(pred_digit if pred_digit != -1 else ""), conf_score))
+                current_frame_radar_boxes.append((x_start, y_start, x_end, y_end, str(pred_digit if pred_digit != -1 else ""), conf_score, min_required_conf))
 
     if detected_sequence:
         sequence_history.append(detected_sequence)
@@ -195,20 +214,22 @@ while True:
             confidence_history_sum += current_confidence
             confidence_samples_count += 1
 
-    # === رسم البوكسات المتوهجة فقط للكونتورات ذات الثقة العالية (> 45) ===
     active_boxes = current_frame_radar_boxes if current_frame_radar_boxes else locked_radar_boxes
     
     if active_boxes:
         overlay_glow = display_frame.copy()
         for box_data in active_boxes:
-            if len(box_data) == 6:
+            if len(box_data) == 7:
+                x_s, y_s, x_e, y_e, p_digit, c_score, req_conf = box_data
+            elif len(box_data) == 6:
                 x_s, y_s, x_e, y_e, p_digit, c_score = box_data
+                req_conf = 51.0
             else:
                 x_s, y_s, x_e, y_e, p_digit = box_data
-                c_score = 100.0 # للبوكسات القديمة المحفوظة
+                c_score = 100.0
+                req_conf = 51.0
 
-            # فلتر منع إزعاج الحيط: لا ترسم إلا إيلا كانت الثقة زايدة على 45%
-            if c_score > 51 and p_digit != "":
+            if c_score >= req_conf and p_digit != "":
                 cv2.rectangle(overlay_glow, (x_s - 4, y_s - 4), (x_e + 4, y_e + 4), (0, 255, 100), 4)
                 cv2.rectangle(overlay_glow, (x_s - 2, y_s - 2), (x_e + 2, y_e + 2), (0, 255, 160), 2)
                 cv2.rectangle(display_frame, (x_s, y_s), (x_e, y_e), (0, 255, 220), 2)
@@ -220,7 +241,6 @@ while True:
 
         cv2.addWeighted(overlay_glow, 0.35, display_frame, 0.65, 0, display_frame)
 
-    # === الواجهة الرئيسية في الجهة اليسرى (Detected Digit & Progress Bar HUD) ===
     if persistent_sequence:
         ui_text = f"DETECTED: [ {persistent_sequence} ]"
         conf_text = f"CONF: {current_confidence:.1f}%"
@@ -252,7 +272,6 @@ while True:
                 
         cv2.rectangle(display_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (120, 120, 120), 1)
 
-    # === واجهة سلسلة الأرقام الطويلة في أسفل الشاشة (Multi-Digit Sequence HUD) ===
     if captured_full_sequence:
         h_f, w_f, _ = display_frame.shape
         seq_x1, seq_y1, seq_x2, seq_y2 = 20, h_f - 80, w_f - 20, h_f - 20
@@ -272,7 +291,6 @@ while True:
         cv2.putText(display_frame, hint_text, (seq_x2 - 170, seq_y1 + 38), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
 
-    # === لوحة الإحصائيات الحية في الجهة اليمنى (Compact Stats Dashboard) ===
     h_frame, w_frame, _ = display_frame.shape
     sx1, sy1, sx2, sy2 = w_frame - 180, 20, w_frame - 15, 105
     
